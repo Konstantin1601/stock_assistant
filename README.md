@@ -9,9 +9,19 @@
 - Сохранение истории запросов в базу данных
 - Веб-интерфейс на Streamlit
 
+## Эндпоинты API
+
+| Эндпоинт | Метод | Описание |
+|----------|-------|----------|
+| `/` | GET | Проверка работы API |
+| `/health` | GET | Статус сервера |
+| `/quote/{ticker}` | GET | Получить данные по акции (пример: /quote/SBER) |
+| `/history` | GET | История запросов из БД |
+
 ## Запуск проекта
 
-### 1. Установка зависимостей
+### 1. Клонировать репозиторий
 
 ```bash
-pip install fastapi uvicorn streamlit requests
+git clone https://github.com/Konstantin1601/stock_assistant.git
+cd stock_assistant
