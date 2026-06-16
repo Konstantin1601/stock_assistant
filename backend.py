@@ -99,6 +99,54 @@ def get_stock_data(ticker):
     except requests.RequestException as e:
         return None, f"Ошибка соединения с MOEX: {str(e)}"
 
+def get_candles(ticker, interval=1):
+    """
+    Получает историю цен (свечи) с MOEX
+    interval: 1 - 1 минута, 10 - 10 минут, 60 - 1 час, 24 - день
+    """
+    url = f"https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/{ticker}/candles.json"
+    
+    params = {
+        "interval": interval,  # интервал свечи
+        "from": datetime.now().strftime("%Y-%m-%d"),  # с сегодня
+        "till": datetime.now().strftime("%Y-%m-%d"),  # по сегодня
+        "limit": 100  # максимум свечей
+    }
+    
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Парсим данные
+        candles = data.get("candles", {})
+        rows = candles.get("data", [])
+        columns = candles.get("columns", [])
+        
+        if not rows or not columns:
+            return None, "Нет данных по свечам"
+        
+        # Находим нужные колонки
+        result = []
+        begin_idx = columns.index("begin") if "begin" in columns else -1
+        close_idx = columns.index("close") if "close" in columns else -1
+        
+        if begin_idx == -1 or close_idx == -1:
+            return None, "Не найдены нужные колонки"
+        
+        # Собираем данные для графика: время и цена закрытия
+        for row in rows:
+            result.append({
+                "time": row[begin_idx],
+                "price": row[close_idx]
+            })
+        
+        return result, None
+        
+    except requests.RequestException as e:
+        return None, f"Ошибка получения свечей: {str(e)}"
+
+
 # Эндпоинты FastAPI
 
 @app.get("/")
@@ -158,6 +206,25 @@ def get_quote(ticker: str):
         response["change_percent"] = round(change_percent, 2)
     
     return response
+
+@app.get("/candles/{ticker}")
+def get_candles_endpoint(ticker: str, interval: int = 1):
+    """
+    Получить историю цен для графика
+    Пример: /candles/SBER?interval=1
+    """
+    ticker = ticker.upper()
+    
+    candles, error = get_candles(ticker, interval)
+    
+    if error or not candles:
+        raise HTTPException(status_code=404, detail=f"Нет данных по {ticker}")
+    
+    return {
+        "ticker": ticker,
+        "candles": candles,
+        "count": len(candles)
+    }
 
 @app.get("/history")
 def get_history(limit: int = 10):
