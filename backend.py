@@ -8,7 +8,7 @@ import json
 # Создаём приложение FastAPI
 app = FastAPI(title="Stock Assistant API", description="API для получения данных с MOEX")
 
-# Настраиваем CORS (чтобы фронтенд мог обращаться к нашему API)
+# Настраиваем CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  
@@ -20,7 +20,7 @@ app.add_middleware(
 # Работа с БД
 
 def init_db():
-    """Создаём таблицу для хранения истории запросов"""
+    # Создаём таблицу для хранения истории запросов
     conn = sqlite3.connect('stock_history.db')
     cursor = conn.cursor()
     cursor.execute('''
@@ -36,7 +36,7 @@ def init_db():
     conn.close()
 
 def save_to_db(ticker, price, success=True):
-    """Сохраняем запрос в базу данных"""
+    # Сохраняем запрос в базу данных
     conn = sqlite3.connect('stock_history.db')
     cursor = conn.cursor()
     cursor.execute('''
@@ -52,7 +52,7 @@ init_db()
 # Функции для работы с MOEX
 
 def get_stock_data(ticker):
-    """Получает данные об акции с MOEX"""
+    # Получает данные об акции с MOEX
     url = f"https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/{ticker}.json"
     
     try:
@@ -101,7 +101,7 @@ def get_stock_data(ticker):
 
 def get_candles(ticker, interval=1):
     """
-    Получает историю цен (свечи) с MOEX
+    Получает историю цен с MOEX
     interval: 1 - 1 минута, 10 - 10 минут, 60 - 1 час, 24 - день
     """
     url = f"https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/{ticker}/candles.json"
@@ -146,14 +146,57 @@ def get_candles(ticker, interval=1):
     except requests.RequestException as e:
         return None, f"Ошибка получения свечей: {str(e)}"
 
+def get_all_tickers():
+    # Получает список всех тикеров с MOEX
+    url = "https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities.json"
+    
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Парсим данные
+        securities = data.get("securities", {})
+        rows = securities.get("data", [])
+        columns = securities.get("columns", [])
+        
+        if not rows or not columns:
+            return None, "Нет данных по тикерам"
+        
+        # Находим индексы нужных колонок
+        secid_idx = columns.index("SECID") if "SECID" in columns else -1
+        shortname_idx = columns.index("SHORTNAME") if "SHORTNAME" in columns else -1
+        
+        if secid_idx == -1:
+            return None, "Не найдена колонка SECID"
+        
+        # Собираем список тикеров с названиями
+        tickers = []
+        for row in rows:
+            ticker = row[secid_idx]
+            name = row[shortname_idx] if shortname_idx != -1 else ticker
+            tickers.append({
+                "ticker": ticker,
+                "name": name
+            })
+        
+        # Сортируем по тикеру
+        tickers.sort(key=lambda x: x["ticker"])
+        
+        return tickers, None
+        
+    except requests.RequestException as e:
+        return None, f"Ошибка получения тикеров: {str(e)}"
+
+
 
 # Эндпоинты FastAPI
 
 @app.get("/")
 def root():
-    """Корневой эндпоинт - проверка работы API"""
+    # Корневой эндпоинт - проверка работы API
     return {
-        "message": "Stock Assistant API работает!",
+        "message": "Stock Assistant API работает",
         "endpoints": {
             "/quote/{ticker}": "Получить информацию об акции",
             "/history": "Получить историю запросов",
@@ -163,7 +206,7 @@ def root():
 
 @app.get("/health")
 def health_check():
-    """Проверка, что сервер жив"""
+    # Проверка, что сервер (скорее) жив
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
 @app.get("/quote/{ticker}")
@@ -224,6 +267,22 @@ def get_candles_endpoint(ticker: str, interval: int = 1):
         "ticker": ticker,
         "candles": candles,
         "count": len(candles)
+    }
+
+@app.get("/tickers")
+def get_tickers():
+    """
+    Получить список всех доступных тикеров
+    Пример: /tickers
+    """
+    tickers, error = get_all_tickers()
+    
+    if error or not tickers:
+        raise HTTPException(status_code=500, detail=f"Ошибка загрузки тикеров: {error}")
+    
+    return {
+        "tickers": tickers,
+        "count": len(tickers)
     }
 
 @app.get("/history")
